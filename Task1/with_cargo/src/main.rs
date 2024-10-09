@@ -7,8 +7,8 @@ use std::io::{self, BufRead};
 // trim()  The trim function in Rust is a method of the String type
 //  that removes leading and trailing whitespace characters from a string
 fn main() -> std::io::Result<()> {
-    let file = File::open("test1.asm")?;
-    // let file = File::open("test2.asm")?; 
+    // let file = File::open("test1.asm")?;
+    let file = File::open("test2.asm")?; 
 
     let reader = io::BufReader::new(file);
 
