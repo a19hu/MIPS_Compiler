@@ -1,20 +1,73 @@
+
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 
+
+// trim()  The trim function in Rust is a method of the String type
+//  that removes leading and trailing whitespace characters from a string
 fn main() -> std::io::Result<()> {
-    let file = File::open("test.asm")?;
+    let file = File::open("test1.asm")?;
     let reader = io::BufReader::new(file);
 
+    let mut data_section = HashMap::new();
+    let mut text_section = vec![];
+    let mut labels = HashMap::new();
+    let mut in_data_section = false;
+    let mut in_text_section = false;
+    let mut line_num = 0;
+    
+
     for line in reader.lines() {
-        let line = line?;
-        let binary_intru = instruction_to_binary(&line);
-        println!("Instruction :{} \nBinary :{:?}", line, binary_intru);
+        let line = line?.trim().to_string();
+
+
+        if line.starts_with(".data") {
+            in_data_section = true;
+            in_text_section = false;
+            continue;
+        }
+
+        if line.starts_with(".text") {
+            in_data_section = false;
+            in_text_section = true;
+            continue;
+        }
+        if in_data_section {
+            // Parse the memory allocations in the .data section
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 && parts[1] == ".word" {
+                let label = parts[0].replace(":", "");
+                let value: i32 = parts[2].parse().unwrap_or(0);
+                data_section.insert(label, value);
+            }
+        }
+
+        if in_text_section {
+            // Handle labels in the .text section
+            if line.ends_with(":") {
+                let label = line.replace(":", "");
+                labels.insert(label, line_num);
+            } else {
+                text_section.push(line.clone());
+                line_num += 1;
+            }
+        }
+
+        // let binary_intru = instruction_to_binary(&line);
+        // println!("Instruction :{} \nBinary :{:?}", line, binary_intru);
+    }
+    for (pc, line) in text_section.iter().enumerate() {
+        let binary_instr = instruction_to_binary(&line, &data_section, &labels);
+        println!("PC: {}, Instruction: {}\nBinary: {}", pc, line,binary_instr);
     }
 
     Ok(())
 }
 
-fn instruction_to_binary(instru: &str) -> String {
+fn instruction_to_binary(instru: &str,
+    data_section: &HashMap<String, i32>,
+    labels: &HashMap<String, usize>) -> String {
     let binding = instru.replace(",", " ");
     let parts: Vec<&str> = binding.split_whitespace().collect();
     let op = parts[0];
@@ -37,26 +90,41 @@ fn instruction_to_binary(instru: &str) -> String {
             };
             format!("{opcode} {rs} {rt} {rd} {shamt} {funct}")
         }
-        "lw" | "beq" | "addi" => {
-            let rs = register_to_binary(parts[1]);
-            let rt = register_to_binary(parts[2]);
-            // let imm= parts[3];
-
+        "addi" => {
+            let rt = register_to_binary(parts[1]);
+            let rs = register_to_binary(parts[2]);
+            let imm = format!("{:016b}", parts[3].parse::<i16>().unwrap());
+            let opcode = "001000";
+            format!("{opcode} {rs} {rt} {imm}")
+        }
+        "lw" | "sw" => {
+            let rt = register_to_binary(parts[1]);
+            let label = parts[2];
+            let base_addr = data_section.get(label).unwrap_or(&0);
+            let base = "00000"; // Assume base is $zero for now
             let opcode = match op {
                 "lw" => "100011",
-                "beq" => "001000",
-                "addi" => "000100",
+                "sw" => "101011",
                 _ => "000000",
             };
-            format!("{opcode}{rs}{rt}")
+            format!("{opcode} {base} {rt} {base_addr}")
+        }
+        // Branching (beq)
+        "beq" => {
+            let rs = register_to_binary(parts[1]);
+            let rt = register_to_binary(parts[2]);
+            let label = parts[3];
+            let branch_addr = labels.get(label).unwrap_or(&0);
+            let opcode = "000100";
+            format!("{opcode} {rs} {rt} {branch_addr}")
         }
         "j" => {
-            let address = parts[1].parse().unwrap_or(0);
+            let label = parts[1];
+            let address = labels.get(label).unwrap_or(&0);
             let opcode = "000010";
-
-            format!("{opcode}{address}")
+            format!("{opcode} {:026b}", address)
         }
-        _ => format!("something error",),
+        _ => format!("Error: Invalid instruction"),
     }
 }
 
