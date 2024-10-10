@@ -1,14 +1,12 @@
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 
-
-// trim()  The trim function in Rust is a method of the String type
-//  that removes leading and trailing whitespace characters from a string
+// The trim function in Rust is a method of the String type
+// that removes leading and trailing whitespace characters from a string
 fn main() -> std::io::Result<()> {
-    // let file = File::open("test1.asm")?;
-    let file = File::open("test2.asm")?; 
+    let file = File::open("test1.asm")?;
+    // let file = File::open("test2.asm")?;
 
     let reader = io::BufReader::new(file);
 
@@ -18,11 +16,17 @@ fn main() -> std::io::Result<()> {
     let mut in_data_section = false;
     let mut in_text_section = false;
     let mut line_num = 0;
-    
+
+    let mut data_address = 0x10010000; // Base address for data section
 
     for line in reader.lines() {
-        let line = line?.trim().to_string();
+        let line = line?;
+        // Remove comments
+        let line = line.split('#').next().unwrap().trim().to_string();
 
+        if line.is_empty() {
+            continue;
+        }
 
         if line.starts_with(".data") {
             in_data_section = true;
@@ -35,12 +39,13 @@ fn main() -> std::io::Result<()> {
             in_text_section = true;
             continue;
         }
+
         if in_data_section {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 3 && parts[1] == ".word" {
                 let label = parts[0].replace(":", "");
-                let value: i32 = parts[2].parse().unwrap_or(0);
-                data_section.insert(label, value);
+                data_section.insert(label, data_address);
+                data_address += 4;
             }
         }
 
@@ -53,25 +58,36 @@ fn main() -> std::io::Result<()> {
                 line_num += 1;
             }
         }
-
     }
+
     for (pc, line) in text_section.iter().enumerate() {
-        let binary_instr = instruction_to_binary(&line, &data_section, &labels);
-        println!("PC: {}, Instruction: {}\nBinary: {}", pc, line,binary_instr);
+        let binary_instr = instruction_to_binary(&line, &data_section, &labels, pc);
+        println!("PC: {}, Instruction: {}\nBinary: {}", pc, line, binary_instr);
     }
 
     Ok(())
 }
 
-fn instruction_to_binary(instru: &str,
-    data_section: &HashMap<String, i32>,
-    labels: &HashMap<String, usize>) -> String {
+fn instruction_to_binary(
+    instru: &str,
+    data_section: &HashMap<String, u32>,
+    labels: &HashMap<String, usize>,
+    current_pc: usize,
+) -> String {
     let binding = instru.replace(",", " ");
     let parts: Vec<&str> = binding.split_whitespace().collect();
+
+    if parts.is_empty() {
+        return "Error: Empty instruction".to_string();
+    }
+
     let op = parts[0];
 
     match op {
         "add" | "sub" | "and" | "or" | "slt" => {
+            if parts.len() < 4 {
+                return "Error: Invalid R-type instruction".to_string();
+            }
             let rs = register_to_binary(parts[2]);
             let rt = register_to_binary(parts[3]);
             let rd = register_to_binary(parts[1]);
@@ -89,45 +105,68 @@ fn instruction_to_binary(instru: &str,
             format!("{opcode} {rs} {rt} {rd} {shamt} {funct}")
         }
         "addi" => {
+            if parts.len() < 4 {
+                return "Error: Invalid addi instruction".to_string();
+            }
             let rt = register_to_binary(parts[1]);
             let rs = register_to_binary(parts[2]);
-            let imm = format!("{:016b}", parts[3].parse::<i16>().unwrap());
+            let imm = format!("{:016b}", parts[3].parse::<i16>().unwrap_or(0));
             let opcode = "001000";
             format!("{opcode} {rs} {rt} {imm}")
         }
         "lw" | "sw" => {
+            if parts.len() < 3 {
+                return "Error: Invalid lw/sw instruction".to_string();
+            }
             let rt = register_to_binary(parts[1]);
             let label = parts[2];
-            let base_addr = data_section.get(label).unwrap_or(&0);
-            let base = "00000"; // Assume base is $zero for now
+            let immediate = data_section.get(label).unwrap_or(&0);
+            let rs = "00000"; // Assume base is $zero for now
             let opcode = match op {
                 "lw" => "100011",
                 "sw" => "101011",
                 _ => "000000",
             };
-            format!("{opcode} {base} {rt} {base_addr}")
+            let imm = format!("{:016b}", immediate);
+            format!("{opcode} {rs} {rt} {imm}")
         }
         "beq" => {
+            if parts.len() < 4 {
+                return "Error: Invalid beq instruction".to_string();
+            }
             let rs = register_to_binary(parts[1]);
             let rt = register_to_binary(parts[2]);
             let label = parts[3];
-            let branch_addr = labels.get(label).unwrap_or(&0);
-            let opcode = "000100";
-            format!("{opcode} {rs} {rt} {branch_addr}")
+            if let Some(&label_addr) = labels.get(label) {
+                // Branch offset calculation: (label_addr - (current_pc + 1))
+                let offset = (label_addr as i32 - (current_pc as i32 + 1)) as i16;
+                let imm = format!("{:016b}", offset);
+                let opcode = "000100";
+                format!("{opcode} {rs} {rt} {imm}")
+            } else {
+                "Error: Undefined label".to_string()
+            }
         }
         "j" => {
+            if parts.len() < 2 {
+                return "Error: Invalid j instruction".to_string();
+            }
             let label = parts[1];
-            let address = labels.get(label).unwrap_or(&0);
-            let opcode = "000010";
-            format!("{opcode} {:026b}", address)
+            if let Some(&label_addr) = labels.get(label) {
+                let address = label_addr;
+                let opcode = "000010";
+                format!("{opcode} {:026b}", address)
+            } else {
+                "Error: Undefined label".to_string()
+            }
         }
-        _ => format!("Error: Invalid instruction"),
+        _ => "Error: Invalid instruction".to_string(),
     }
 }
 
 fn register_to_binary(reg: &str) -> String {
     let reg_bin = match reg {
-        "$Zero" => "00000",
+        "$zero" => "00000",
         "$t0" => "01000",
         "$t1" => "01001",
         "$t2" => "01010",
@@ -138,6 +177,5 @@ fn register_to_binary(reg: &str) -> String {
         "$t7" => "01111",
         _ => "00000",
     };
-
-    format!("{}", reg_bin)
+    reg_bin.to_string()
 }
