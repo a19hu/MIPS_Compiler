@@ -26,4 +26,37 @@ The first task involves implementing a MIPS compiler that reads MIPS assembly in
 
 - **Supported Instructions**: R-type, I-type, and J-type.
 - **Input**: MIPS assembly files (e.g., `.asm` files with `.data` and `.text` sections).
+- **Output**: Binary machine code suitable for execution in a MIPS processor simulator.
+
+### Task 2: MIPS Execution Simulation
+The second task simulates the execution of MIPS binary instructions.
+
+- **Features**:
+  - Simulation of MIPS datapath and control signals.
+  - Execution of ALU operations, memory access (e.g., `lw`, `sw`), and branch instructions.
+  - Accurate simulation of the program counter and 32 general-purpose registers.
+
+### Task 3: MIPS Testing and Reporting
+In this task, we created and tested 5 different MIPS programs to challenge our simulator, analyzing the results to ensure the accuracy of instruction execution.
+
+## Key Implementation Highlights
+
+- **Instruction Handling**: Supports the decoding and execution of R-type, I-type, and J-type instructions.
+- **Control Signal Simulation**: Accurately simulates control signals across the MIPS pipeline.
+- **Memory and Register Simulation**: Ensures correct reads and writes to memory and registers.
+- **Program Counter Management**: Handles branching and jumping instructions.
+- **Error Handling**: Robust handling of unknown instructions, invalid registers, and incorrect labels.
+
+## Usage
+
+### Task 1: MIPS Compiler
+To run the MIPS compiler:
+```bash
+rustc main.rs
+./main
+
+The first task involves implementing a MIPS compiler that reads MIPS assembly instructions and translates them into binary machine code.
+
+- **Supported Instructions**: R-type, I-type, and J-type.
+- **Input**: MIPS assembly files (e.g., `.asm` files with `.data` and `.text` sections).
 - **Output**: Binary machine code suitable for execution
